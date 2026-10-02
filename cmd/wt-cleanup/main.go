@@ -66,6 +66,14 @@ type integration struct {
 	Reason string `json:"reason"`
 }
 
+type previewResult struct {
+	Branch        string `json:"branch"`
+	Path          string `json:"path"`
+	Reason        string `json:"reason"`
+	Target        string `json:"target"`
+	BranchDeleted bool   `json:"branch_deleted"`
+}
+
 func main() {
 	if err := run(os.Args[1:], execRunner{}, os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -78,6 +86,10 @@ func run(args []string, commands runner, stdout, stderr io.Writer) error {
 	flags.SetOutput(stderr)
 	apply := flags.Bool("yes", false, "remove matching worktrees and branches")
 	flags.BoolVar(apply, "y", false, "remove matching worktrees and branches")
+	noDeleteBranch := flags.Bool("no-delete-branch", false, "keep local branches after removing worktrees")
+	reap := flags.Bool("reap", false, "terminate non-interactive processes in removed worktrees")
+	noHooks := flags.Bool("no-hooks", false, "skip Worktrunk removal hooks")
+	format := flags.String("format", "text", "output format: text or json")
 	flags.Usage = func() {
 		fmt.Fprintln(flags.Output(), "Usage: wt cleanup [--yes]")
 		fmt.Fprintln(flags.Output(), "\nFetch the default branch and remove clean worktrees integrated into it.")
@@ -92,6 +104,9 @@ func run(args []string, commands runner, stdout, stderr io.Writer) error {
 	}
 	if flags.NArg() != 0 {
 		return fmt.Errorf("unexpected arguments: %s", strings.Join(flags.Args(), " "))
+	}
+	if *format != "text" && *format != "json" {
+		return fmt.Errorf("invalid format %q: expected text or json", *format)
 	}
 
 	listed, err := listWorktrees(commands)
@@ -119,24 +134,58 @@ func run(args []string, commands runner, stdout, stderr io.Writer) error {
 		}
 
 		matched++
+		if !*apply && *format == "json" {
+			result := previewResult{
+				Branch:        item.Branch,
+				Path:          item.Worktree.Path,
+				Reason:        item.DefaultBranch.Integration.Reason,
+				Target:        upstream,
+				BranchDeleted: !*noDeleteBranch,
+			}
+			if err := json.NewEncoder(stdout).Encode(result); err != nil {
+				return fmt.Errorf("encode preview for %s: %w", item.Branch, err)
+			}
+			continue
+		}
 		action := "would remove"
 		if *apply {
 			action = "remove"
 		}
-		fmt.Fprintf(stdout, "%-12s %s (%s): %s in %s\n", action, item.Worktree.Path, item.Branch, item.DefaultBranch.Integration.Reason, upstream)
+		if *format == "text" {
+			fmt.Fprintf(stdout, "%-12s %s (%s): %s in %s\n", action, item.Worktree.Path, item.Branch, item.DefaultBranch.Integration.Reason, upstream)
+		}
 		if !*apply {
 			continue
 		}
-		if _, err := commands.run("wt", "remove", "--foreground", item.Branch); err != nil {
+		removeArgs := []string{"remove", "--foreground", "--format", *format}
+		if *noDeleteBranch {
+			removeArgs = append(removeArgs, "--no-delete-branch")
+		}
+		if *reap {
+			removeArgs = append(removeArgs, "--reap")
+		}
+		if *noHooks {
+			removeArgs = append(removeArgs, "--no-hooks")
+		}
+		removeArgs = append(removeArgs, item.Branch)
+		removeOutput, err := commands.run("wt", removeArgs...)
+		if err != nil {
 			return fmt.Errorf("remove %s: %w", item.Branch, err)
+		}
+		if *format == "json" {
+			if _, err := stdout.Write(removeOutput); err != nil {
+				return fmt.Errorf("write removal result for %s: %w", item.Branch, err)
+			}
 		}
 		removed++
 	}
 
-	if *apply {
-		fmt.Fprintf(stdout, "\nRemoved %d worktree(s).\n", removed)
-	} else {
-		fmt.Fprintf(stdout, "\n%d matching worktree(s). Re-run with --yes to remove them.\n", matched)
+	if *format == "text" {
+		if *apply {
+			fmt.Fprintf(stdout, "\nRemoved %d worktree(s).\n", removed)
+		} else {
+			fmt.Fprintf(stdout, "\n%d matching worktree(s). Re-run with --yes to remove them.\n", matched)
+		}
 	}
 	return nil
 }

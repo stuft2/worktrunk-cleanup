@@ -57,8 +57,8 @@ func TestRunFetchesAndPreviewsIntegratedWorktrees(t *testing.T) {
 
 func TestRunRemovesOnlySafeIntegratedWorktrees(t *testing.T) {
 	commands := newFakeRunner()
-	commands.responses["wt remove --foreground feature/rebased"] = []response{{}}
-	commands.responses["wt remove --foreground feature/squashed"] = []response{{}}
+	commands.responses["wt remove --foreground --format text feature/rebased"] = []response{{}}
+	commands.responses["wt remove --foreground --format text feature/squashed"] = []response{{}}
 	var stdout, stderr bytes.Buffer
 	if err := run([]string{"--yes"}, commands, &stdout, &stderr); err != nil {
 		t.Fatal(err)
@@ -73,6 +73,36 @@ func TestRunRemovesOnlySafeIntegratedWorktrees(t *testing.T) {
 	want := []string{"feature/rebased", "feature/squashed"}
 	if !reflect.DeepEqual(removed, want) {
 		t.Fatalf("removed branches = %v, want %v", removed, want)
+	}
+}
+
+func TestRunForwardsRemovalFlagsAndJSONOutput(t *testing.T) {
+	commands := newFakeRunner()
+	rebased := `{"branch":"feature/rebased","branch_outcome":"not_attempted"}` + "\n"
+	squashed := `{"branch":"feature/squashed","branch_outcome":"not_attempted"}` + "\n"
+	commands.responses["wt remove --foreground --format json --no-delete-branch --reap --no-hooks feature/rebased"] = []response{{output: rebased}}
+	commands.responses["wt remove --foreground --format json --no-delete-branch --reap --no-hooks feature/squashed"] = []response{{output: squashed}}
+
+	var stdout, stderr bytes.Buffer
+	args := []string{"--yes", "--format=json", "--no-delete-branch", "--reap", "--no-hooks"}
+	if err := run(args, commands, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := stdout.String(), rebased+squashed; got != want {
+		t.Fatalf("JSON output = %q, want %q", got, want)
+	}
+}
+
+func TestRunJSONPreviewHonorsNoDeleteBranch(t *testing.T) {
+	commands := newFakeRunner()
+	var stdout, stderr bytes.Buffer
+	if err := run([]string{"--format=json", "--no-delete-branch"}, commands, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(stdout.String()), "\n") {
+		if !strings.Contains(line, `"branch_deleted":false`) {
+			t.Errorf("preview line %q does not retain the branch", line)
+		}
 	}
 }
 

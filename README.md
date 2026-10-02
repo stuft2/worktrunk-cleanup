@@ -22,6 +22,15 @@ wt cleanup       # fetch and preview integrated worktrees
 wt cleanup --yes # remove matching worktrees and local branches
 ```
 
+Cleanup mirrors Worktrunk's safe removal controls:
+
+```sh
+wt cleanup --no-delete-branch # keep local branches
+wt cleanup --reap             # stop non-interactive worktree processes
+wt cleanup --no-hooks         # skip removal hooks
+wt cleanup --format=json      # emit machine-readable results
+```
+
 The command recognizes regular, rebased, and squash merges through
 Worktrunk's native integration checks. It skips primary, current, locked,
 detached, dirty, and unmerged worktrees.
