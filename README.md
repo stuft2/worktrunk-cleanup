@@ -43,6 +43,14 @@ go build ./cmd/wt-cleanup
 
 ## How to Publish
 
+Releases are published automatically after the checks pass on `main`. Pull
+request titles must follow Conventional Commits. `feat` changes create minor
+releases, `fix` changes create patch releases, and breaking changes are marked
+with `!` or a `BREAKING CHANGE` footer. During initial development, breaking
+changes also create minor releases.
+
+Changes such as `docs`, `test`, and `ci` do not publish a release on their own.
+Each release creates a semantic version tag and generated GitHub release notes.
 Install a released version with `go install` and its Git tag, for example:
 
 ```sh
